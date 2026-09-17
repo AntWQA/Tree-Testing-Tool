@@ -624,6 +624,56 @@
   }
   .confirm-bar .path { font-weight: 600; font-size: 14px; }
 
+  /* Audience filter. Staff already know this navigation structure, so
+     their runs are not comparable to a customer's: blending the two lifts
+     every success figure on this tab. The control drives the per-task
+     stats, the session log and the export together, so what you read is
+     always what you would send. */
+  .audience-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .audience-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .seg {
+    display: flex;
+    gap: 4px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .seg button.active { background: var(--ink); color: var(--paper); }
+  .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .seg-n {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    opacity: 0.75;
+  }
+  .info-note { font-size: 13px; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 14px; }
+
   .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .chip {
     border: 1px solid var(--line-strong);
@@ -995,6 +1045,7 @@
   var confirmEndSession = false; // moderator is confirming an early end to the session
   var endedEarly = false; // the completed session stopped before all tasks ran -- affects the summary copy
   var expandedSessions = {}; // doc._id -> true when its results table is expanded
+  var audienceFilter = "all"; // ledger: "all" | "external" | "internal" -- see audienceDocs()
   var openExportMenu = null; // "header" | doc._id | null
   var onboardStep = null; // null | 1 | 2 | 3 -- floating tour step; 1-2 on the first task's start screen, 3 on its tree-nav screen
   var onboardPauseStart = 0; // Date.now() while an onboard step is covering the active task screen -- see pauseTimerForOnboard()
@@ -1638,6 +1689,43 @@
     render();
   }
 
+  // ---------- Audience ----------
+  // doTERRA staff already know this structure, so their runs are not
+  // comparable to a customer's and blending the two lifts every success
+  // figure. Everything on the Ledger reads through this filter: the
+  // per-task stats, the session log and the export, so the numbers on
+  // screen are always the numbers in the file.
+  //
+  // Deliberately NOT applied to the duplicate-name check, the resume
+  // banner or the in-progress count: those must always see every session
+  // regardless of what the Ledger is currently showing.
+  function plural(n, word, suffix) {
+    return n + " " + word + (n === 1 ? "" : (suffix || "s"));
+  }
+  function audienceDocs() {
+    if (audienceFilter === "external") return ledgerDocs.filter(function (d) { return !d.participantInternal; });
+    if (audienceFilter === "internal") return ledgerDocs.filter(function (d) { return !!d.participantInternal; });
+    return ledgerDocs;
+  }
+  function audienceCounts(docs) {
+    var list = docs || ledgerDocs;
+    var internal = list.filter(function (d) { return !!d.participantInternal; }).length;
+    return { all: list.length, internal: internal, external: list.length - internal };
+  }
+  function audienceName(which) {
+    return which === "external" ? "Customers" : which === "internal" ? "doTERRA staff" : "Everyone";
+  }
+  // Describes a set of sessions by its actual make-up rather than by the
+  // filter, so an export says what is in it however it was produced.
+  function audienceSummary(docs) {
+    var c = audienceCounts(docs);
+    if (!c.all) return "no participants";
+    if (!c.internal) return plural(c.external, "customer");
+    if (!c.external) return plural(c.internal, "doTERRA staff member");
+    return plural(c.all, "participant") + " (" + c.external + " customer" + (c.external === 1 ? "" : "s") +
+      ", " + c.internal + " doTERRA staff)";
+  }
+
   // ---------- Ledger ----------
   function subscribeLedger() {
     if (dbReady && db) {
@@ -1731,9 +1819,11 @@
     }
   }
 
-  function ledgerStats() {
+  // Takes the docs explicitly rather than reading ledgerDocs, so the stats
+  // always describe exactly the set the caller means.
+  function ledgerStats(docs) {
     var byTask = activeTasks.map(function () { return { n: 0, direct: 0, indirect: 0, fail: 0, times: [] }; });
-    ledgerDocs.forEach(function (doc) {
+    (docs || []).forEach(function (doc) {
       (doc.results || []).forEach(function (r) {
         var b = byTask[r.taskIndex];
         if (!b) return;
@@ -1802,7 +1892,13 @@
   }
 
   function markdownForDocs(docs) {
-    var lines = ["# Wayfinding Trial Results", "", "_Exported " + new Date().toLocaleString() + "_"];
+    var lines = ["# Wayfinding Trial Results", "",
+      "_Exported " + new Date().toLocaleString() + "_", "",
+      "**Covers " + audienceSummary(docs) + ".**"];
+    var comp = audienceCounts(docs);
+    if (comp.internal && comp.external) {
+      lines.push("", "> This export mixes doTERRA staff with customers. Staff already know this navigation structure, so the success rates read higher than a customer-only set would. Split them on the Participant type column of the CSV export before quoting anything.");
+    }
     docs.forEach(function (doc) {
       lines.push("");
       lines.push("## " + (doc.participant || "(unnamed)"));
@@ -2295,6 +2391,44 @@
     render();
   }
 
+  function renderAudienceBar() {
+    var counts = audienceCounts(ledgerDocs);
+    var card = el("div", { class: "card" });
+    var bar = el("div", { class: "audience-bar" });
+    bar.appendChild(el("span", { class: "audience-label", id: "audience-label" }, ["Showing"]));
+    var seg = el("div", { class: "seg", role: "group", "aria-labelledby": "audience-label" });
+    [["all", counts.all], ["external", counts.external], ["internal", counts.internal]].forEach(function (pair) {
+      var key = pair[0], n = pair[1];
+      var btn = el("button", {
+        class: audienceFilter === key ? "active" : "",
+        "data-audience": key,
+        "aria-pressed": String(audienceFilter === key)
+      }, [audienceName(key), el("span", { class: "seg-n" }, [String(n)])]);
+      // A filter that empties the page is worse than no filter: leave the
+      // button visible so the count still reads, but not selectable.
+      if (!n && audienceFilter !== key) btn.disabled = true;
+      btn.addEventListener("click", function () {
+        audienceFilter = key;
+        scheduleFocus(function () { return document.querySelector('.seg button[data-audience="' + key + '"]'); });
+        render();
+      });
+      seg.appendChild(btn);
+    });
+    bar.appendChild(seg);
+    card.appendChild(bar);
+    if (audienceFilter === "all" && counts.internal && counts.external) {
+      card.appendChild(el("div", { class: "warn-note" }, [
+        "These totals mix " + plural(counts.internal, "doTERRA staff member") + " in with " +
+        plural(counts.external, "customer") + ". Staff already know this navigation structure, so every success rate below reads higher than a customer-only set would. Switch to Customers before quoting anything."
+      ]));
+    } else if (audienceFilter === "internal") {
+      card.appendChild(el("div", { class: "info-note", style: "margin-top:12px;" }, [
+        "Staff only. Useful as a sense check on the tasks and the wording, not as evidence about customers."
+      ]));
+    }
+    return card;
+  }
+
   function renderLedger() {
     subscribeLedger();
     var frag = document.createDocumentFragment();
@@ -2303,10 +2437,12 @@
       frag.appendChild(el("div", { class: "card" }, [el("div", { class: "empty" }, ["No results storage is available in this view, so there’s nothing to show yet."])]));
       return frag;
     }
-    var stats = ledgerStats();
+    var shown = audienceDocs();
+    if (ledgerDocs.length) frag.appendChild(renderAudienceBar());
+    var stats = ledgerStats(shown);
     var summary = el("div", { class: "card" });
     summary.appendChild(el("h2", {}, ["Per-task results"]));
-    summary.appendChild(el("p", { class: "hint" }, ["Across " + (new Set(ledgerDocs.map(function (d) { return d.participant; }))).size + " participant(s). 80% or higher direct success is the bar, below 60% flags that part of the structure for a redesign."]));
+    summary.appendChild(el("p", { class: "hint" }, ["Across " + (new Set(shown.map(function (d) { return d.participant; }))).size + " participant(s). 80% or higher direct success is the bar, below 60% flags that part of the structure for a redesign."]));
     var scroll = el("div", { class: "table-scroll" });
     var table = el("table");
     table.appendChild(el("thead", {}, [el("tr", {}, [
@@ -2334,7 +2470,8 @@
     var rawHead = el("div", { style: "display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;" }, [
       el("h2", { style: "margin:0;" }, ["Session log"]),
       el("div", { style: "display:flex; gap:8px;" }, [
-        ledgerDocs.length ? renderExportMenu("header", function () { return ledgerDocs; }, "wayfinding-trial-results", true) : null,
+        shown.length ? renderExportMenu("header", function () { return audienceDocs(); },
+          "wayfinding-trial-results" + (audienceFilter === "all" ? "" : "-" + audienceFilter), true) : null,
         ledgerDocs.length ? el("button", {
           id: "clear-all-btn",
           class: "btn btn-ghost", style: "color:var(--fail); border-color:var(--fail); display:inline-flex; align-items:center; gap:6px;",
@@ -2347,6 +2484,9 @@
       ])
     ]);
     raw.appendChild(rawHead);
+    raw.appendChild(el("p", { class: "hint", style: "margin:6px 0 0;" }, [
+      "Export covers " + audienceSummary(shown) + ", matching the filter above. Every row carries its own participant type, so the two can always be split again downstream."
+    ]));
     if (ledgerStorageMode === "local") {
       raw.appendChild(el("div", { style: "margin-top:6px; color:var(--muted); font-size:14px; max-width:60ch;" }, [
         "Saved to this browser’s local storage only -- not synced to other devices. Use Export below regularly to keep a copy elsewhere."
@@ -2358,7 +2498,9 @@
         class: "warn-note", role: "alertdialog", "aria-label": "Confirm delete all sessions",
         style: "display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:12px; color:var(--fail); background:var(--fail-bg);"
       }, [
-        el("span", {}, ["Delete all " + ledgerDocs.length + " saved session(s)? This can't be undone."]),
+        el("span", {}, ["Delete all " + ledgerDocs.length + " saved session(s)" +
+          (audienceFilter === "all" ? "" : ", including the ones the current filter is hiding") +
+          "? This can't be undone."]),
         el("div", { style: "display:flex; gap:8px;" }, [
           el("button", {
             id: "ledger-clearall-cancel", class: "btn btn-ghost",
@@ -2373,10 +2515,14 @@
       ]));
     }
 
-    if (!ledgerDocs.length) {
-      raw.appendChild(el("div", { class: "empty" }, ["No sessions saved yet. Run one from the Session tab."]));
+    if (!shown.length) {
+      raw.appendChild(el("div", { class: "empty" }, [
+        ledgerDocs.length
+          ? "No " + audienceName(audienceFilter).toLowerCase() + " sessions saved. Switch the filter above to see the others."
+          : "No sessions saved yet. Run one from the Session tab."
+      ]));
     } else {
-      ledgerDocs.forEach(function (doc) {
+      shown.forEach(function (doc) {
         var block = el("div", { style: "margin-top:18px; padding-top:14px; border-top:1px solid var(--line);" });
         var isConfirming = confirmDeleteId === doc._id;
         var isExpanded = !!expandedSessions[doc._id];
