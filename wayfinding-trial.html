@@ -1895,10 +1895,6 @@
     var lines = ["# Wayfinding Trial Results", "",
       "_Exported " + new Date().toLocaleString() + "_", "",
       "**Covers " + audienceSummary(docs) + ".**"];
-    var comp = audienceCounts(docs);
-    if (comp.internal && comp.external) {
-      lines.push("", "> This export mixes doTERRA staff with customers. Staff already know this navigation structure, so the success rates read higher than a customer-only set would. Split them on the Participant type column of the CSV export before quoting anything.");
-    }
     docs.forEach(function (doc) {
       lines.push("");
       lines.push("## " + (doc.participant || "(unnamed)"));
