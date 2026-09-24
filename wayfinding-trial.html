@@ -255,6 +255,16 @@
     text-wrap: balance;
   }
   p.hint { color: var(--muted); font-size: 14px; margin: 0 0 18px; max-width: 60ch; }
+  .time-label {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-tint);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+  }
 
   .eyebrow {
     font-size: 11px;
@@ -1820,6 +1830,16 @@
   function plural(n, word, suffix) {
     return n + " " + word + (n === 1 ? "" : (suffix || "s"));
   }
+
+  // Rough duration guide for the whole session (every task, back to back),
+  // not a promise. Based on the usual moderated pace: reading the
+  // scenario, navigating (including backtracking) and confirming a
+  // destination runs 1.5-3 minutes per task.
+  function estimatedSessionMinutes() {
+    var low = Math.max(1, Math.round(activeTasks.length * 1.5));
+    var high = Math.max(low + 1, activeTasks.length * 3);
+    return low + "–" + high + " min";
+  }
   function audienceDocs() {
     if (audienceFilter === "external") return ledgerDocs.filter(function (d) { return !d.participantInternal; });
     if (audienceFilter === "internal") return ledgerDocs.filter(function (d) { return !!d.participantInternal; });
@@ -2154,6 +2174,7 @@
     var resumeBanner = renderResumeBanner();
     var card = el("div", { class: "card" });
     card.appendChild(el("h2", {}, ["Start a session"]));
+    card.appendChild(el("div", { class: "time-label" }, ["Expected time: ~" + estimatedSessionMinutes()]));
     card.appendChild(el("p", { class: "hint" }, ["One participant at a time, " + activeTasks.length + " task" + (activeTasks.length === 1 ? "" : "s") + ", text-only navigation. Let them click without hints, and only confirm when they'd genuinely act on it."]));
     card.appendChild(el("label", { class: "field", for: "participant-input" }, ["Participant"]));
     var input = el("input", {
@@ -2229,6 +2250,9 @@
     var isFirstTask = taskIndex === 0;
     var card = el("div", { class: "card" });
     card.appendChild(el("div", { class: "eyebrow muted" }, ["PARTICIPANT"]));
+    if (isFirstTask) {
+      card.appendChild(el("div", { class: "time-label" }, ["Expected time: ~" + estimatedSessionMinutes()]));
+    }
     card.appendChild(el("div", { class: "progress-row" }, [
       el("span", { class: "step" }, ["TASK " + (taskIndex + 1) + " OF " + activeTasks.length]),
       practiceRun ? el("span", { class: "timer" }, ["00:00"]) : null
